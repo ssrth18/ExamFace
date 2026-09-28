@@ -64,7 +64,100 @@ function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;',
 function escapeAttr(s){return escapeHtml(s)}
 function render(){if(state.route==='exam'){app.innerHTML=exam();applyDivider();startTimer();return}clearInterval(window.__timer);if(state.route==='home')app.innerHTML=home();if(state.route==='builder')app.innerHTML=builder();if(state.route==='extract')app.innerHTML=extraction();if(state.route==='review')app.innerHTML=review();if(state.route==='config')app.innerHTML=config();if(state.route==='publish')app.innerHTML=publish();if(state.route==='result')app.innerHTML=result();if(state.route==='architecture')app.innerHTML=architecture()}
 function applyDivider(){const d=$('#divider'),w=$('#workspace');if(!d||!w)return;const pct=Math.max(25,Math.min(75,state.divider));w.style.gridTemplateColumns=`minmax(280px,${pct}fr) 7px minmax(280px,${100-pct}fr)`;let drag=false,startX=0,startPct=pct;const move=e=>{if(!drag)return;const rect=w.getBoundingClientRect();state.divider=Math.max(25,Math.min(75,startPct+(e.clientX-startX)/rect.width*100));applyDivider();persist()};const up=()=>{drag=false;document.body.style.cursor='';window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up)};d.onpointerdown=e=>{drag=true;startX=e.clientX;startPct=state.divider;document.body.style.cursor='col-resize';window.addEventListener('pointermove',move);window.addEventListener('pointerup',up)};d.ondblclick=()=>{state.divider=50;applyDivider();persist();toastMsg('Panel split reset to 50/50')};}
-async function handleFile(file){if(!file)return;if(file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf')){toastMsg('Please select a PDF file.');return}state.sourceName=file.name;state.route='extract';state.extractionProgress=0;render();let bar=$('#extractBar'),stage=$('#extractStage');let p=0;const tick=setInterval(()=>{p+=Math.random()*17+8;if(p>=100){p=100;clearInterval(tick);if(stage)stage.innerHTML=`<div class="feature"><strong>Layout analysis complete</strong><p>Detected document structure and filtered repeated page furniture.</p></div><div class="feature"><strong>Questions normalized</strong><p>${allQuestions().length} demo questions loaded into the stable Exam JSON boundary.</p></div><div class="feature"><strong>Confidence review</strong><p>All demo blocks pass the review gate. Real scanned pages would enter OCR fallback.</p></div>`;setTimeout(()=>{state.route='review';render()},650)}if(bar)bar.style.width=p+'%'},320)}
+async function handleFile(file){
+  if(!file)return;
+
+  if(file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf')){
+    toastMsg('Please select a PDF file.');
+    return;
+  }
+
+  state.sourceName=file.name;
+  state.route='extract';
+  state.extractionProgress=10;
+  render();
+
+  const bar=$('#extractBar');
+  const stage=$('#extractStage');
+
+  try{
+    if(stage)stage.innerHTML='<div class="feature"><strong>Uploading PDF</strong><p>Sending the document to the ExamFace PDF extraction engine.</p></div>';
+    if(bar)bar.style.width='10%';
+
+    const form=new FormData();
+    form.append('file',file);
+
+    if(bar)bar.style.width='25%';
+
+    const response=await fetch('/api/extract',{
+      method:'POST',
+      body:form
+    });
+
+    if(bar)bar.style.width='70%';
+
+    const result=await response.json();
+
+    if(!response.ok){
+      throw new Error(result.message||result.detail||result.error||'PDF extraction failed');
+    }
+
+    if(!Array.isArray(result.questions)){
+      throw new Error('PDF engine returned no questions.');
+    }
+
+    const questions=result.questions.map((q,index)=>({
+      id:'q'+(index+1),
+      number:q.number||index+1,
+      text:q.text||'',
+      options:(q.options||[]).map((o,i)=>({
+        id:o.id||String.fromCharCode(65+i),
+        text:o.text||''
+      })),
+      answer:q.answer??null,
+      explanation:q.explanation||'',
+      section:q.section||'Imported Questions',
+      pages:q.pages||[],
+      extractionMethod:q.extractionMethod||'native'
+    }));
+
+    state.exam.sections=[{
+      id:'imported',
+      name:'Imported Questions',
+      questions:questions
+    }];
+
+    state.extractionProgress=100;
+
+    if(stage){
+      stage.innerHTML='<div class="feature"><strong>PDF extraction complete</strong><p>'+
+        (result.pageCount||0)+' pages processed.</p></div>'+
+        '<div class="feature"><strong>'+questions.length+
+        ' questions detected</strong><p>Questions are loaded into the review screen.</p></div>'+
+        '<div class="feature"><strong>Confidence: '+
+        (result.confidence||'unknown')+'</strong><p>Review the extracted questions before publishing.</p></div>';
+    }
+
+    if(bar)bar.style.width='100%';
+
+    setTimeout(()=>{
+      state.route='review';
+      render();
+    },700);
+
+  }catch(error){
+    console.error(error);
+
+    if(stage){
+      stage.innerHTML='<div class="feature"><strong>PDF extraction failed</strong><p>'+
+        error.message+'</p></div>';
+    }
+
+    if(bar)bar.style.width='100%';
+
+    toastMsg(error.message||'PDF extraction failed.');
+  }
+}
 function setRoute(r){state.route=r; if(r==='exam'){state.started=true;if(!state.timeLeft)state.timeLeft=state.exam.duration*60}render();window.scrollTo({top:0,behavior:'smooth'})}
 function handleAction(a){if(!a)return;if(a==='home')return setRoute('home');if(a==='builder')return setRoute('builder');if(a==='exam')return setRoute('exam');if(a==='architecture')return setRoute('architecture');if(a==='how'){openDialog('<h2>How it works</h2><p>1. Upload a PDF. 2. Extract questions using the isolated PDF/OCR engine. 3. Review and edit. 4. Configure scoring and timing. 5. Publish an anonymous exam link. 6. Candidates take the exam without creating an account.</p>');return}if(a==='choose-pdf')return $('#pdfInput')?.click();if(a==='sample'){state.sourceName='sample-question-paper.pdf';state.exam=clone(sampleExam);state.route='extract';render();setTimeout(()=>{const b=$('#extractBar');let p=0;const t=setInterval(()=>{p+=20;if(b)b.style.width=p+'%';if(p>=100){clearInterval(t);state.route='review';render()}},250)},100);return}if(a==='review')return setRoute('review');if(a==='config'){saveEditor(false);return setRoute('config')}if(a==='publish'){saveConfig();return setRoute('publish')}if(a==='copy-link'){navigator.clipboard?.writeText($('.share-url')?.textContent||'');toastMsg('Temporary link copied');return}if(a==='save-question'){saveEditor(true);return}if(a.startsWith('set-answer-')){const i=Number(a.split('-').pop());const qs=allQuestions();const q=qs[state.reviewIndex];q.answer=i;saveEditor(true);return}if(a==='add-question'){state.exam.sections[state.exam.sections.length-1].questions.push({id:'q'+Date.now(),text:'New question',options:['Option A','Option B','Option C','Option D'],answer:0});state.reviewIndex=allQuestions().length-1;render();return}if(a==='delete-question'){if(allQuestions().length<=1)return;const q=allQuestions()[state.reviewIndex];state.exam.sections[q.si].questions.splice(q.qi,1);state.reviewIndex=Math.max(0,state.reviewIndex-1);render();return}if(a==='pause'){state.paused=true;toastMsg('Test paused');render();return}if(a==='resume'){state.paused=false;toastMsg('Test resumed');render();return}if(a==='save-next'){saveAnswer();navigateFlat(currentFlatIndex()+1);return}if(a==='review-next'){saveAnswer();const q=currentQuestion();state.marked[q.id]=true;persist();navigateFlat(currentFlatIndex()+1);return}if(a==='previous'){navigateFlat(currentFlatIndex()-1);return}if(a==='clear'){delete state.answers[currentQuestion().id];persist();render();return}if(a==='submit')return submitConfirm();if(a==='confirm-submit'){closeDialog();state.route='result';state.result=true;persist();render();return}if(a==='instructions')return instructionsDialog();if(a==='question-paper')return questionPaperDialog();if(a==='close-dialog')return closeDialog();if(a==='blueprint-info'){openDialog('<h2>Blueprint</h2><p>The complete implementation specification is included as <b>EXAMFACE_COMPLETE_BLUEPRINT.md</b> in this project package. It covers domains, PDF/OCR service boundaries, parser stages, normalized Exam JSON, API design, security, testing, accessibility, deployment and the exact candidate state machine.</p>');return}}
 function saveAnswer(){const q=currentQuestion();const checked=$('input[name="answer"]:checked');if(checked)state.answers[q.id]=Number(checked.value);state.visited[q.id]=true;persist()}
