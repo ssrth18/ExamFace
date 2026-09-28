@@ -9,4 +9,4 @@ const server=http.createServer(async(req,res)=>{try{
  if(req.method==='GET'&&req.url.startsWith('/api/exams/')){const id=req.url.split('/').pop();return exams.has(id)?json(res,200,exams.get(id)):json(res,404,{error:'not_found'})}
  let u=req.url.split('?')[0];if(u==='/')u='/index.html';const file=path.join(root,u);if(!file.startsWith(root)||!fs.existsSync(file)||fs.statSync(file).isDirectory())return json(res,404,{error:'not_found'});res.writeHead(200,{'content-type':mime[path.extname(file)]||'application/octet-stream'});fs.createReadStream(file).pipe(res);
 }catch(e){json(res,500,{error:'server_error',message:e.message})}});
-server.listen(port,()=>console.log(`ExamFace running at http://localhost:${port}`));
+server.listen(port,'0.0.0.0',()=>console.log(`ExamFace running at http://localhost:${port}`));
