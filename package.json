@@ -1,0 +1,7 @@
+{
+  "name":"examface",
+  "version":"1.0.0",
+  "private":true,
+  "scripts":{"start":"node backend/server.js"},
+  "engines":{"node":">=18"}
+}

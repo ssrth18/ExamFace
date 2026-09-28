@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"ExamFace Normalized Exam",
+  "type":"object",
+  "required":["id","title","duration","sections"],
+  "properties":{
+    "id":{"type":"string"},"title":{"type":"string"},"duration":{"type":"integer","minimum":1},
+    "positive":{"type":"number"},"negative":{"type":"number"},"pauseAllowed":{"type":"boolean"},
+    "sections":{"type":"array","items":{"type":"object","required":["id","name","questions"],"properties":{
+      "id":{"type":"string"},"name":{"type":"string"},"questions":{"type":"array","items":{"type":"object","required":["id","text","options"],"properties":{
+        "id":{"type":"string"},"text":{"type":"string"},"options":{"type":"array","items":{"type":"string"}},"answer":{"type":["integer","null"]},"image":{"type":["string","null"]},"explanation":{"type":["string","null"]},"confidence":{"type":"number","minimum":0,"maximum":1}
+      }}}
+    }}}
+  }
+}
